@@ -103,7 +103,7 @@ Copy `ANUNCIOS.cmd` from `package/CONTROLES PARA ESCRITORIO/` to the cashier des
 
 ## Wiki
 
-[Spanish and English guides](https://github.com/j3w1/ce-signage/wiki) cover daily use, installation, and troubleshooting.
+[Spanish and English guides](wiki/README.md) cover daily use, installation, and troubleshooting. These files are also the source for the GitHub Wiki.
 
 ## GitHub
 
