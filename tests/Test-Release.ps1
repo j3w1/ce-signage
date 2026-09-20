@@ -7,7 +7,7 @@ if (-not (Test-Path -LiteralPath $archivo)) { throw "Falta ZIP de release: $arch
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $archivo).Path)
 try {
-    $nombres = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\\', '/') })
+    $nombres = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
     foreach ($requerido in @(
         'CONTROLES PARA ESCRITORIO/ANUNCIOS.cmd',
         'CONTROLES PARA ESCRITORIO/START ANUNCIOS.cmd',
