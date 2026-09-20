@@ -1,0 +1,18 @@
+# Build output
+release/
+artifacts/
+*.zip
+
+# Runtime / local diagnostics
+*.log
+*.pid
+estado.json
+lista.m3u8
+cache/
+herramientas/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

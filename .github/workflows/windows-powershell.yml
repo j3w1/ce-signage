@@ -1,0 +1,35 @@
+name: Windows PowerShell
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Windows PowerShell version
+        shell: powershell
+        run: $PSVersionTable
+
+      - name: Validate PowerShell syntax
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Validate-PowerShell.ps1
+
+      - name: Test invariants
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Test-Invariants.ps1
+
+      - name: Build release
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Build-Release.ps1 -OutputDirectory .\artifacts
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: casa-elida-anuncios
+          path: artifacts/*.zip
