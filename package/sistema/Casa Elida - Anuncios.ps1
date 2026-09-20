@@ -13,6 +13,7 @@ $LogPath = Join-Path $InstallDir 'registro.log'
 $StatePath = Join-Path $InstallDir 'estado.json'
 $ControllerPidPath = Join-Path $InstallDir 'controlador.pid'
 $VlcPidPath = Join-Path $InstallDir 'vlc.pid'
+. (Join-Path $InstallDir 'Identidad de Procesos.ps1')
 
 function Escribir-Log {
     param([string]$Mensaje)
@@ -33,6 +34,28 @@ function Escribir-Log {
     catch {}
 }
 
+function Escribir-EstadoArchivo {
+    param([object]$Estado)
+
+    $temporal = Join-Path $InstallDir ('estado-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    try {
+        $utf8 = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($temporal, ($Estado | ConvertTo-Json -Depth 4), $utf8)
+        if (Test-Path -LiteralPath $StatePath) {
+            [System.IO.File]::Replace($temporal, $StatePath, $null)
+        }
+        else {
+            [System.IO.File]::Move($temporal, $StatePath)
+        }
+    }
+    catch {
+        Escribir-Log "No se pudo escribir estado.json: $($_.Exception.Message)"
+    }
+    finally {
+        Remove-Item -LiteralPath $temporal -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Guardar-Estado {
     param(
         [string]$EstadoGeneral,
@@ -44,31 +67,24 @@ function Guardar-Estado {
         [string]$Detalle = ''
     )
 
-    try {
-        $resolucion = ''
-        if ($Ancho -gt 0 -and $Alto -gt 0) {
-            $resolucion = "${Ancho}x${Alto}"
-        }
-
-        $estadoObjeto = [ordered]@{
-            Actualizado = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-            EstadoGeneral = $EstadoGeneral
-            ArchivosOriginales = $Originales
-            ArchivosPreparados = $Preparados
-            ArchivosConError = $Errores
-            ResolucionObjetivo = $resolucion
-            Detalle = $Detalle
-        }
-
-        $estadoObjeto |
-            ConvertTo-Json -Depth 4 |
-            Set-Content -LiteralPath $StatePath -Encoding UTF8
+    $resolucion = ''
+    if ($Ancho -gt 0 -and $Alto -gt 0) { $resolucion = "${Ancho}x${Alto}" }
+    $script:UltimoEstado = [ordered]@{
+        Actualizado = (Get-Date).ToString('o')
+        EstadoGeneral = $EstadoGeneral
+        ArchivosOriginales = $Originales
+        ArchivosPreparados = $Preparados
+        ArchivosConError = $Errores
+        ResolucionObjetivo = $resolucion
+        Detalle = $Detalle
     }
-    catch {
-        try {
-            Escribir-Log "No se pudo escribir estado.json: $($_.Exception.Message)"
-        }
-        catch {}
+    Escribir-EstadoArchivo -Estado $script:UltimoEstado
+}
+
+function Actualizar-Latido {
+    if ($script:UltimoEstado) {
+        $script:UltimoEstado.Actualizado = (Get-Date).ToString('o')
+        Escribir-EstadoArchivo -Estado $script:UltimoEstado
     }
 }
 
@@ -491,7 +507,7 @@ function Iniciar-Vlc {
             -WorkingDirectory (Split-Path -Parent $vlc) `
             -PassThru
 
-        Set-Content -LiteralPath $VlcPidPath -Value $script:ProcesoVlc.Id -Encoding ASCII
+        Guardar-PidControlado -ArchivoPid $VlcPidPath -Proceso $script:ProcesoVlc
 
         $cantidad = if ($ArchivosPreparados) { $ArchivosPreparados.Count } else { 0 }
         Escribir-Log "VLC iniciado. PID $($script:ProcesoVlc.Id). Pantalla $indicePantalla. $cantidad archivo(s) preparados. VOUT=$salidaVideo. HW decode=off. SiempreEncima=$siempreEncima."
@@ -537,7 +553,7 @@ try {
 
     New-Item -ItemType Directory -Path $CarpetaMultimedia -Force | Out-Null
     New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null
-    Set-Content -LiteralPath $ControllerPidPath -Value $PID -Encoding ASCII
+    Guardar-PidControlado -ArchivoPid $ControllerPidPath -Proceso (Get-Process -Id $PID)
 
     Add-Type -AssemblyName System.Windows.Forms
 
@@ -565,7 +581,7 @@ public static class Casa_Elida_Power_v31
 }
 '@
 
-    Escribir-Log 'Controlador Casa Elida - Anuncios v3.3 iniciado.'
+    Escribir-Log 'Controlador Casa Elida - Anuncios v3.4 iniciado.'
     Escribir-Log "Carpeta de anuncios: $CarpetaMultimedia"
 
     if (-not $SinEsperaInicial) {
@@ -587,6 +603,7 @@ public static class Casa_Elida_Power_v31
     $ultimoAlto = 0
 
     while ($true) {
+        Actualizar-Latido
         [Casa_Elida_Power_v31]::MantenerPantallaEncendida() | Out-Null
 
         $pantallas = @([System.Windows.Forms.Screen]::AllScreens)

@@ -1,10 +1,9 @@
 ﻿param(
-    [Parameter(Mandatory = $true)]
-    [ValidateSet('Iniciar', 'Detener', 'Estado')]
-    [string]$Accion
+    [ValidateSet('Menu', 'Iniciar', 'Detener', 'Estado')]
+    [string]$Accion = 'Menu'
 )
 
-$ErrorActionPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Stop'
 
 $InstallDir = 'C:\ProgramData\Casa Elida\Anuncios'
 $ControllerPath = Join-Path $InstallDir 'Casa Elida - Anuncios.ps1'
@@ -16,12 +15,13 @@ $VlcPidPath = Join-Path $InstallDir 'vlc.pid'
 $LogPath = Join-Path $InstallDir 'registro.log'
 $StartupLogPath = Join-Path $InstallDir 'arranque.log'
 $StartupErrorPath = Join-Path $InstallDir 'arranque-error.log'
+. (Join-Path $PSScriptRoot 'Identidad de Procesos.ps1')
+. (Join-Path $PSScriptRoot 'Estado de Anuncios.ps1')
+$script:EnMenu = $false
 
 try {
     [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
     $Host.UI.RawUI.WindowTitle = 'Casa Elida - Anuncios'
-    $Host.UI.RawUI.BufferSize = New-Object Management.Automation.Host.Size(110, 3000)
-    $Host.UI.RawUI.WindowSize = New-Object Management.Automation.Host.Size(110, 34)
 }
 catch {}
 
@@ -30,59 +30,33 @@ function Mostrar-Cabecera {
 
     Clear-Host
     Write-Host ''
-    Write-Host '  ╔══════════════════════════════════════════════════════════════════════════════════════════════╗' -ForegroundColor DarkCyan
-    Write-Host '  ║                                         CASA ELIDA                                           ║' -ForegroundColor Cyan
-    Write-Host '  ╚══════════════════════════════════════════════════════════════════════════════════════════════╝' -ForegroundColor DarkCyan
-    Write-Host ''
-
-    $banner = @'
-        █████╗ ███╗   ██╗██╗   ██╗███╗   ██╗ ██████╗██╗ ██████╗ ███████╗
-       ██╔══██╗████╗  ██║██║   ██║████╗  ██║██╔════╝██║██╔═══██╗██╔════╝
-       ███████║██╔██╗ ██║██║   ██║██╔██╗ ██║██║     ██║██║   ██║███████╗
-       ██╔══██║██║╚██╗██║██║   ██║██║╚██╗██║██║     ██║██║   ██║╚════██║
-       ██║  ██║██║ ╚████║╚██████╔╝██║ ╚████║╚██████╗██║╚██████╔╝███████║
-       ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝╚═╝ ╚═════╝ ╚══════╝
-'@
-    Write-Host $banner -ForegroundColor Yellow
-    Write-Host ''
-    Write-Host ("                                   {0}" -f $Subtitulo) -ForegroundColor White
-    Write-Host ''
-    Write-Host '  ──────────────────────────────────────────────────────────────────────────────────────────────' -ForegroundColor DarkGray
-    Write-Host ''
+    Write-Host '  Casa Elida | Anuncios' -ForegroundColor Cyan
+    Write-Host ('  {0}' -f $Subtitulo) -ForegroundColor White
+    Write-Host '  ----------------------------------------' -ForegroundColor DarkGray
 }
 
 function Esperar-Cierre {
     Write-Host ''
-    Write-Host '  Presione ENTER para cerrar esta ventana...' -ForegroundColor DarkGray
-    [void](Read-Host)
+    if ($script:EnMenu) {
+        [void](Read-Host '  Presione ENTER para volver al menú')
+    }
+    else {
+        [void](Read-Host '  Presione ENTER para cerrar')
+    }
 }
 
 function Obtener-ProcesoDesdePid {
-    param(
-        [string]$ArchivoPid,
-        [string]$NombreEsperado
-    )
-
-    if (-not (Test-Path -LiteralPath $ArchivoPid)) {
-        return $null
-    }
-
-    try {
-        $pidObjetivo = [int](Get-Content -LiteralPath $ArchivoPid -ErrorAction Stop | Select-Object -First 1)
-        $proceso = Get-Process -Id $pidObjetivo -ErrorAction SilentlyContinue
-
-        if ($proceso -and $proceso.ProcessName -like "$NombreEsperado*") {
-            return $proceso
-        }
-    }
-    catch {}
-
-    return $null
+    param([string]$ArchivoPid, [string]$NombreEsperado)
+    return (Obtener-ProcesoControlado -ArchivoPid $ArchivoPid -NombreEsperado $NombreEsperado)
 }
 
 function Obtener-Datos {
     $r = [ordered]@{
-        Instalado = $false
+        Instalado = ((Test-Path -LiteralPath $ControllerPath) -and (Test-Path -LiteralPath $LauncherPath))
+        ConfigValida = $false
+        ErrorConfig = ''
+        EstadoValido = $false
+        EstadoActualizado = $null
         Pantallas = 0
         SegundaPantalla = $false
         ArchivosOriginales = 0
@@ -100,48 +74,47 @@ function Obtener-Datos {
         Ffmpeg = $false
     }
 
-    if (-not (Test-Path -LiteralPath $ConfigPath)) {
-        return [pscustomobject]$r
-    }
-
-    $r.Instalado = $true
+    if (-not $r.Instalado) { return [pscustomobject]$r }
 
     try {
-        $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
+        $config = Get-Content -LiteralPath $ConfigPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if (-not $config.CarpetaMultimedia -or -not $config.RutaFfmpeg -or -not $config.RutaVlc) {
+            throw 'Faltan rutas obligatorias.'
+        }
         $r.Carpeta = [string]$config.CarpetaMultimedia
         $r.SalidaVlc = [string]$config.SalidaVideoVlc
-
-        if ($null -ne $config.SiempreEncimaVlc) {
-            $r.SiempreEncima = [bool]$config.SiempreEncimaVlc
-        }
-
-        $r.Ffmpeg = (Test-Path -LiteralPath ([string]$config.RutaFfmpeg))
+        if ($null -ne $config.SiempreEncimaVlc) { $r.SiempreEncima = [bool]$config.SiempreEncimaVlc }
+        $r.Ffmpeg = Test-Path -LiteralPath ([string]$config.RutaFfmpeg)
+        $r.ConfigValida = $true
     }
-    catch {}
+    catch { $r.ErrorConfig = $_.Exception.Message }
 
     try {
-        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
         $pantallas = @([System.Windows.Forms.Screen]::AllScreens)
         $r.Pantallas = $pantallas.Count
         $r.SegundaPantalla = ($pantallas.Count -ge 2)
     }
-    catch {}
+    catch { $r.Detalle = 'No se pudieron consultar las pantallas.' }
 
     try {
-        if (Test-Path -LiteralPath $StatePath) {
-            $estado = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
-            $r.ArchivosOriginales = [int]$estado.ArchivosOriginales
-            $r.ArchivosPreparados = [int]$estado.ArchivosPreparados
-            $r.ArchivosConError = [int]$estado.ArchivosConError
-            $r.ResolucionObjetivo = [string]$estado.ResolucionObjetivo
-            $r.EstadoPreparacion = [string]$estado.EstadoGeneral
-            $r.Detalle = [string]$estado.Detalle
-        }
-        elseif (Test-Path -LiteralPath $r.Carpeta) {
+        $estado = Get-Content -LiteralPath $StatePath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        $r.ArchivosOriginales = [int]$estado.ArchivosOriginales
+        $r.ArchivosPreparados = [int]$estado.ArchivosPreparados
+        $r.ArchivosConError = [int]$estado.ArchivosConError
+        $r.ResolucionObjetivo = [string]$estado.ResolucionObjetivo
+        $r.EstadoPreparacion = [string]$estado.EstadoGeneral
+        $r.Detalle = [string]$estado.Detalle
+        if (-not $r.EstadoPreparacion -or -not $estado.Actualizado) { throw 'Estado incompleto.' }
+        $r.EstadoActualizado = [datetime]::Parse([string]$estado.Actualizado)
+        $r.EstadoValido = $true
+    }
+    catch {
+        if (-not $r.Detalle) { $r.Detalle = 'Estado no disponible; espere o revise registro.log.' }
+        if (Test-Path -LiteralPath $r.Carpeta) {
             $r.ArchivosOriginales = @(Get-ChildItem -LiteralPath $r.Carpeta -File -Recurse -ErrorAction SilentlyContinue).Count
         }
     }
-    catch {}
 
     $r.Controlador = Obtener-ProcesoDesdePid -ArchivoPid $ControllerPidPath -NombreEsperado 'powershell'
     $r.Vlc = Obtener-ProcesoDesdePid -ArchivoPid $VlcPidPath -NombreEsperado 'vlc'
@@ -156,117 +129,40 @@ function Obtener-Datos {
 }
 
 function Fila {
-    param(
-        [string]$Etiqueta,
-        [string]$Valor,
-        [ConsoleColor]$Color = [ConsoleColor]::White
-    )
-
-    Write-Host ('  {0,-28}' -f ($Etiqueta + ':')) -NoNewline -ForegroundColor DarkGray
+    param([string]$Etiqueta, [string]$Valor, [ConsoleColor]$Color = [ConsoleColor]::White)
+    Write-Host ('  {0,-24}' -f ($Etiqueta + ':')) -NoNewline -ForegroundColor DarkGray
     Write-Host $Valor -ForegroundColor $Color
 }
 
 function Mostrar-EstadoActual {
-    $d = Obtener-Datos
+    param([switch]$Resumido)
 
-    if (-not $d.Instalado) {
-        Fila 'Sistema' 'NO INSTALADO' Red
-        Write-Host ''
-        Write-Host '  Avise al administrador. Falta la instalación de Casa Elida - Anuncios.' -ForegroundColor Red
+    $d = Obtener-Datos
+    $resumen = Resolver-EstadoAnuncios -Datos $d
+    Write-Host ''
+    Write-Host ('  {0}' -f $resumen.Titulo) -ForegroundColor $resumen.Color
+    Write-Host ('  {0}' -f $resumen.Paso) -ForegroundColor White
+
+    if ($Resumido) {
+        Fila 'Listos / omitidos' ("$($d.ArchivosPreparados) / $($d.ArchivosConError)")
         return $d
     }
 
-    Fila 'Sistema' 'INSTALADO' Green
-
-    if ($d.SegundaPantalla) {
-        Fila 'Segunda pantalla' "CONECTADA ($($d.Pantallas) pantallas detectadas)" Green
-    }
-    else {
-        Fila 'Segunda pantalla' 'NO CONECTADA' Red
-    }
-
-    Fila 'Archivos en anuncios' "$($d.ArchivosOriginales)" Cyan
-
-    if ($d.ArchivosPreparados -gt 0) {
-        Fila 'Listos para reproducir' "$($d.ArchivosPreparados)" Green
-    }
-    else {
-        Fila 'Listos para reproducir' "$($d.ArchivosPreparados)" Yellow
-    }
-
-    if ($d.ArchivosConError -gt 0) {
-        Fila 'Omitidos / con error' "$($d.ArchivosConError)" Red
-    }
-    else {
-        Fila 'Omitidos / con error' '0' Green
-    }
-
-    if ($d.ResolucionObjetivo) {
-        Fila 'Resolución preparada' $d.ResolucionObjetivo White
-    }
-
-    if ($d.Ffmpeg) {
-        Fila 'Normalizador FFmpeg' 'OK' Green
-    }
-    else {
-        Fila 'Normalizador FFmpeg' 'NO DISPONIBLE' Red
-    }
-
-    Fila 'Modo de video VLC' "$($d.SalidaVlc) + decodificación por software" Cyan
-
-    if ($d.SiempreEncima) {
-        Fila 'Siempre encima' 'ACTIVADO' Green
-    }
-    else {
-        Fila 'Siempre encima' 'DESACTIVADO' Yellow
-    }
-
-    if ($d.Controlador) {
-        Fila 'Controlador' "ACTIVO - PID $($d.Controlador.Id)" Green
-    }
-    else {
-        Fila 'Controlador' 'DETENIDO' Yellow
-    }
-
-    if ($d.Vlc) {
-        Fila 'Reproductor VLC' "REPRODUCIENDO - PID $($d.Vlc.Id)" Green
-    }
-    else {
-        Fila 'Reproductor VLC' 'DETENIDO' Yellow
-    }
-
-    Fila 'Inicio automático' $d.Tarea Cyan
-    Fila 'Carpeta' $d.Carpeta White
-
-    if ($d.EstadoPreparacion) {
-        Fila 'Preparación multimedia' $d.EstadoPreparacion $(if ($d.EstadoPreparacion -match 'ERROR') { 'Red' } elseif ($d.EstadoPreparacion -eq 'PREPARANDO') { 'Yellow' } else { 'Green' })
-    }
-
-    if ($d.Detalle) {
-        Write-Host ''
-        Write-Host '  Detalle:' -ForegroundColor DarkGray
-        Write-Host "  $($d.Detalle)" -ForegroundColor White
-    }
-
     Write-Host ''
-    Write-Host '  ──────────────────────────────────────────────────────────────────────────────────────────────' -ForegroundColor DarkGray
-
-    if (-not $d.SegundaPantalla) {
-        Write-Host '  ESTADO GENERAL: REVISAR SEGUNDA PANTALLA' -ForegroundColor Red
-    }
-    elseif ($d.EstadoPreparacion -match 'ERROR') {
-        Write-Host '  ESTADO GENERAL: HAY UN PROBLEMA DE PREPARACIÓN' -ForegroundColor Red
-    }
-    elseif ($d.Controlador -and $d.Vlc) {
-        Write-Host '  ESTADO GENERAL: FUNCIONANDO CORRECTAMENTE' -ForegroundColor Green
-    }
-    elseif (-not $d.Controlador -and -not $d.Vlc) {
-        Write-Host '  ESTADO GENERAL: ANUNCIOS DETENIDOS' -ForegroundColor Yellow
-    }
-    else {
-        Write-Host '  ESTADO GENERAL: INCOMPLETO - USE START ANUNCIOS' -ForegroundColor Yellow
-    }
-
+    Fila 'Segunda pantalla' $(if ($d.SegundaPantalla) { 'Conectada' } else { 'No detectada' }) $(if ($d.SegundaPantalla) { 'Green' } else { 'Red' })
+    Fila 'Archivos originales' ([string]$d.ArchivosOriginales)
+    Fila 'Listos / omitidos' ("$($d.ArchivosPreparados) / $($d.ArchivosConError)")
+    Fila 'Controlador' $(if ($d.Controlador) { "Activo (PID $($d.Controlador.Id))" } else { 'Detenido' })
+    Fila 'Reproductor VLC' $(if ($d.Vlc) { "Activo (PID $($d.Vlc.Id))" } else { 'Detenido' })
+    Fila 'Inicio automático' $d.Tarea
+    Fila 'FFmpeg' $(if ($d.Ffmpeg) { 'Disponible' } else { 'No disponible' })
+    if ($d.ResolucionObjetivo) { Fila 'Resolución' $d.ResolucionObjetivo }
+    if ($d.SalidaVlc) { Fila 'Salida VLC' $d.SalidaVlc }
+    Fila 'Siempre encima' $(if ($d.SiempreEncima) { 'Activado' } else { 'Desactivado' })
+    Fila 'Carpeta' $d.Carpeta
+    if ($d.EstadoActualizado) { Fila 'Actualizado' ($d.EstadoActualizado.ToString('yyyy-MM-dd HH:mm:ss')) }
+    if ($d.ErrorConfig) { Fila 'Configuración' $d.ErrorConfig Red }
+    if ($d.Detalle) { Fila 'Detalle' $d.Detalle }
     return $d
 }
 
@@ -292,6 +188,13 @@ function Iniciar-Anuncios {
 
     $antes = Obtener-Datos
 
+    if (-not $antes.ConfigValida) {
+        Write-Host '  No se puede iniciar: la configuración falta o es inválida.' -ForegroundColor Red
+        Write-Host '  Avise al administrador.' -ForegroundColor White
+        Esperar-Cierre
+        return
+    }
+
     if (-not $antes.SegundaPantalla) {
         Write-Host '  NO SE PUEDE INICIAR.' -ForegroundColor Red
         Write-Host ''
@@ -301,9 +204,8 @@ function Iniciar-Anuncios {
         return
     }
 
-    if ($antes.Controlador -and $antes.Vlc) {
-        Write-Host '  Los anuncios ya están funcionando correctamente.' -ForegroundColor Green
-        Write-Host ''
+    if ($antes.Controlador) {
+        Write-Host '  El controlador ya está activo.' -ForegroundColor Cyan
         Mostrar-EstadoActual | Out-Null
         Esperar-Cierre
         return
@@ -391,41 +293,58 @@ function Iniciar-Anuncios {
 }
 
 function Detener-Anuncios {
-    Mostrar-Cabecera 'DETENER PANTALLA DE ANUNCIOS'
-
+    Mostrar-Cabecera 'Detener anuncios'
     $datos = Obtener-Datos
 
     if (-not $datos.Instalado) {
-        Write-Host '  ERROR: El sistema de anuncios no está instalado.' -ForegroundColor Red
+        Write-Host '  El sistema no está instalado. Avise al administrador.' -ForegroundColor Red
         Esperar-Cierre
         return
     }
 
-    Write-Host '  Deteniendo anuncios...' -ForegroundColor Cyan
-
-    $controlador = Obtener-ProcesoDesdePid -ArchivoPid $ControllerPidPath -NombreEsperado 'powershell'
-    if ($controlador) {
-        Stop-Process -Id $controlador.Id -Force -ErrorAction SilentlyContinue
+    if ($script:EnMenu) {
+        $confirmacion = Read-Host '  ¿Detener anuncios? Escriba S para confirmar'
+        if ($confirmacion -ine 'S') {
+            Write-Host '  Operación cancelada.' -ForegroundColor Yellow
+            Esperar-Cierre
+            return
+        }
     }
 
-    Start-Sleep -Milliseconds 500
-
-    $vlc = Obtener-ProcesoDesdePid -ArchivoPid $VlcPidPath -NombreEsperado 'vlc'
-    if ($vlc) {
-        Stop-Process -Id $vlc.Id -Force -ErrorAction SilentlyContinue
+    $inciertos = New-Object System.Collections.Generic.List[string]
+    foreach ($par in @(
+        @{ Ruta = $ControllerPidPath; Nombre = 'powershell'; Etiqueta = 'controlador' },
+        @{ Ruta = $VlcPidPath; Nombre = 'vlc'; Etiqueta = 'VLC' }
+    )) {
+        if (-not (Test-Path -LiteralPath $par.Ruta)) { continue }
+        $proceso = Obtener-ProcesoDesdePid -ArchivoPid $par.Ruta -NombreEsperado $par.Nombre
+        if (-not $proceso) {
+            $inciertos.Add($par.Etiqueta)
+            continue
+        }
+        try {
+            Stop-Process -Id $proceso.Id -Force -ErrorAction Stop
+            Start-Sleep -Milliseconds 300
+            if (Get-Process -Id $proceso.Id -ErrorAction SilentlyContinue) {
+                $inciertos.Add($par.Etiqueta)
+            }
+            else {
+                Remove-Item -LiteralPath $par.Ruta -Force -ErrorAction Stop
+            }
+        }
+        catch { $inciertos.Add($par.Etiqueta) }
     }
-
-    Remove-Item -LiteralPath $ControllerPidPath -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $VlcPidPath -Force -ErrorAction SilentlyContinue
 
     Registrar-EventoManual "PARADA MANUAL solicitada por $env:USERNAME."
-
     Write-Host ''
-    Write-Host '  ANUNCIOS DETENIDOS.' -ForegroundColor Green
-    Write-Host ''
-    Write-Host '  Permanecerán detenidos hasta usar START ANUNCIOS' -ForegroundColor White
-    Write-Host '  o hasta el próximo inicio de sesión de Windows.' -ForegroundColor White
-
+    if ($inciertos.Count -gt 0) {
+        Write-Host '  No se pudo confirmar la parada completa.' -ForegroundColor Yellow
+        Write-Host ('  Revise: {0}. Avise al administrador.' -f ($inciertos -join ', ')) -ForegroundColor White
+    }
+    else {
+        Write-Host '  Anuncios detenidos.' -ForegroundColor Green
+        Write-Host '  Volverán a iniciar al próximo inicio de sesión de Windows.' -ForegroundColor White
+    }
     Esperar-Cierre
 }
 
@@ -462,7 +381,33 @@ function Estado-Anuncios {
     Esperar-Cierre
 }
 
+function Menu-Anuncios {
+    $script:EnMenu = $true
+    while ($true) {
+        Mostrar-Cabecera 'Control de la pantalla de anuncios'
+        Mostrar-EstadoActual -Resumido | Out-Null
+        Write-Host ''
+        Write-Host '  1  Iniciar anuncios' -ForegroundColor White
+        Write-Host '  2  Detener anuncios' -ForegroundColor White
+        Write-Host '  3  Ver estado y avisos' -ForegroundColor White
+        Write-Host '  0  Salir' -ForegroundColor DarkGray
+        Write-Host ''
+        $opcion = Read-Host '  Elija una opción'
+        switch ($opcion) {
+            '1' { Iniciar-Anuncios }
+            '2' { Detener-Anuncios }
+            '3' { Estado-Anuncios }
+            '0' { return }
+            default {
+                Write-Host '  Opción no válida. Use 1, 2, 3 o 0.' -ForegroundColor Yellow
+                Start-Sleep -Seconds 2
+            }
+        }
+    }
+}
+
 switch ($Accion) {
+    'Menu'    { Menu-Anuncios }
     'Iniciar' { Iniciar-Anuncios }
     'Detener' { Detener-Anuncios }
     'Estado'  { Estado-Anuncios }

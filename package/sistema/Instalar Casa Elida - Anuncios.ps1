@@ -1,4 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
+$SourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $SourceDir 'Identidad de Procesos.ps1')
+. (Join-Path $SourceDir 'Verificar Descarga.ps1')
 
 $TaskName = 'Casa Elida - Anuncios'
 $InstallDir = 'C:\ProgramData\Casa Elida\Anuncios'
@@ -121,12 +124,14 @@ function Detener-Instalacion {
         (Join-Path $Carpeta 'controlador.pid'),
         (Join-Path $Carpeta 'controller.pid')
     )) {
-        if (Test-Path -LiteralPath $archivoPid) {
-            try {
-                $pidObjetivo = [int](Get-Content -LiteralPath $archivoPid -ErrorAction Stop | Select-Object -First 1)
-                Stop-Process -Id $pidObjetivo -Force -ErrorAction SilentlyContinue
-            }
-            catch {}
+        $nombre = if ($archivoPid -like '*vlc.pid') { 'vlc' } else { 'powershell' }
+        $proceso = Obtener-ProcesoControlado -ArchivoPid $archivoPid -NombreEsperado $nombre
+        if ($proceso) {
+            try { Stop-Process -Id $proceso.Id -Force -ErrorAction Stop }
+            catch { throw "No se pudo detener $nombre (PID $($proceso.Id))." }
+        }
+        elseif (Test-Path -LiteralPath $archivoPid) {
+            Write-Host "Aviso: PID no verificable en $archivoPid; no se detendrá otro proceso." -ForegroundColor Yellow
         }
     }
 
@@ -136,53 +141,47 @@ function Detener-Instalacion {
     catch {}
 }
 
-function Instalar-Ffmpeg {
+function Preparar-Ffmpeg {
     if ((Test-Path -LiteralPath $FfmpegPath) -and (Test-Path -LiteralPath $FfprobePath)) {
         Write-Host 'FFmpeg ya está disponible.' -ForegroundColor Green
-        return
+        return $null
     }
 
-    Write-Host ''
-    Write-Host 'Descargando FFmpeg para normalizar imágenes y videos...' -ForegroundColor Cyan
-    Write-Host 'Esto se realiza una sola vez.' -ForegroundColor DarkGray
-
-    New-Item -ItemType Directory -Path $FfmpegDir -Force | Out-Null
-
+    Write-Host 'Descargando y verificando FFmpeg antes de detener la versión instalada...' -ForegroundColor Cyan
     $tempRoot = Join-Path $env:TEMP ('Casa-Elida-FFmpeg-' + [Guid]::NewGuid().ToString('N'))
     $zipPath = Join-Path $tempRoot 'ffmpeg.zip'
+    $hashPath = Join-Path $tempRoot 'ffmpeg.sha256'
     $extractDir = Join-Path $tempRoot 'extraido'
-
-    New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
 
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
         $url = 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
-        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zipPath
+        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zipPath -ErrorAction Stop
+        Invoke-WebRequest -UseBasicParsing -Uri ($url + '.sha256') -OutFile $hashPath -ErrorAction Stop
+        Confirmar-Sha256 -Archivo $zipPath -ArchivoSha256 $hashPath
 
         Expand-Archive -LiteralPath $zipPath -DestinationPath $extractDir -Force
-
-        $ffmpegEncontrado = Get-ChildItem -LiteralPath $extractDir -Filter 'ffmpeg.exe' -File -Recurse | Select-Object -First 1
-        $ffprobeEncontrado = Get-ChildItem -LiteralPath $extractDir -Filter 'ffprobe.exe' -File -Recurse | Select-Object -First 1
-
-        if (-not $ffmpegEncontrado -or -not $ffprobeEncontrado) {
-            throw 'La descarga no contiene ffmpeg.exe y ffprobe.exe.'
-        }
-
-        Copy-Item -LiteralPath $ffmpegEncontrado.FullName -Destination $FfmpegPath -Force
-        Copy-Item -LiteralPath $ffprobeEncontrado.FullName -Destination $FfprobePath -Force
-
-        # También copiamos las DLL necesarias si el build deja alguna junto a bin.
-        $binOrigen = Split-Path -Parent $ffmpegEncontrado.FullName
-        Get-ChildItem -LiteralPath $binOrigen -Filter '*.dll' -File -ErrorAction SilentlyContinue | ForEach-Object {
-            Copy-Item -LiteralPath $_.FullName -Destination $FfmpegDir -Force
-        }
-
-        Write-Host 'FFmpeg instalado correctamente.' -ForegroundColor Green
+        $ffmpeg = Get-ChildItem -LiteralPath $extractDir -Filter 'ffmpeg.exe' -File -Recurse | Select-Object -First 1
+        $ffprobe = Get-ChildItem -LiteralPath $extractDir -Filter 'ffprobe.exe' -File -Recurse | Select-Object -First 1
+        if (-not $ffmpeg -or -not $ffprobe) { throw 'La descarga no contiene FFmpeg y FFprobe.' }
+        return [pscustomobject]@{ TempRoot = $tempRoot; BinDir = (Split-Path -Parent $ffmpeg.FullName) }
     }
-    finally {
+    catch {
         Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        throw
+    }
+}
+
+function Copiar-FfmpegPreparado {
+    param([object]$Preparado)
+    if (-not $Preparado) { return }
+    New-Item -ItemType Directory -Path $FfmpegDir -Force | Out-Null
+    foreach ($nombre in @('ffmpeg.exe', 'ffprobe.exe')) {
+        Copy-Item -LiteralPath (Join-Path $Preparado.BinDir $nombre) -Destination (Join-Path $FfmpegDir $nombre) -Force
+    }
+    Get-ChildItem -LiteralPath $Preparado.BinDir -Filter '*.dll' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $FfmpegDir -Force
     }
 }
 
@@ -212,12 +211,14 @@ if (-not $vlcPath) {
     exit 1
 }
 
-$SourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ControllerSource = Join-Path $SourceDir 'Casa Elida - Anuncios.ps1'
 $LauncherSource = Join-Path $SourceDir 'Lanzador Casa Elida - Anuncios.ps1'
 $ControlSource = Join-Path $SourceDir 'Control de Anuncios.ps1'
+$IdentitySource = Join-Path $SourceDir 'Identidad de Procesos.ps1'
+$StatusSource = Join-Path $SourceDir 'Estado de Anuncios.ps1'
+$HashSource = Join-Path $SourceDir 'Verificar Descarga.ps1'
 
-foreach ($archivo in @($ControllerSource, $LauncherSource, $ControlSource)) {
+foreach ($archivo in @($ControllerSource, $LauncherSource, $ControlSource, $IdentitySource, $StatusSource, $HashSource)) {
     if (-not (Test-Path -LiteralPath $archivo)) {
         throw "Falta un archivo del paquete: $archivo"
     }
@@ -229,15 +230,21 @@ Write-Host 'Validando sintaxis de los scripts antes de instalar...' -ForegroundC
 Probar-SintaxisPowerShell -Archivos @(
     $ControllerSource,
     $LauncherSource,
-    $ControlSource
+    $ControlSource,
+    $IdentitySource,
+    $StatusSource,
+    $HashSource
 )
 
 Write-Host ''
-Write-Host 'CASA ELIDA - ANUNCIOS v3.3'
+Write-Host 'CASA ELIDA - ANUNCIOS v3.4'
 Write-Host '=========================='
 Write-Host ''
 Write-Host 'Instalando / actualizando...' -ForegroundColor Cyan
 
+$ffmpegPreparado = Preparar-Ffmpeg
+
+try {
 # Detiene instalaciones previas sin tocar la carpeta de anuncios.
 foreach ($nombreTarea in $LegacyTaskNames) {
     foreach ($carpeta in $LegacyInstallDirs) {
@@ -267,8 +274,11 @@ if ($herramientasTemporales -and (Test-Path -LiteralPath $herramientasTemporales
 Copy-Item -LiteralPath $ControllerSource -Destination (Join-Path $InstallDir 'Casa Elida - Anuncios.ps1') -Force
 Copy-Item -LiteralPath $LauncherSource -Destination (Join-Path $InstallDir 'Lanzador Casa Elida - Anuncios.ps1') -Force
 Copy-Item -LiteralPath $ControlSource -Destination (Join-Path $InstallDir 'Control de Anuncios.ps1') -Force
+Copy-Item -LiteralPath $IdentitySource -Destination (Join-Path $InstallDir 'Identidad de Procesos.ps1') -Force
+Copy-Item -LiteralPath $StatusSource -Destination (Join-Path $InstallDir 'Estado de Anuncios.ps1') -Force
+Copy-Item -LiteralPath $HashSource -Destination (Join-Path $InstallDir 'Verificar Descarga.ps1') -Force
 
-Instalar-Ffmpeg
+Copiar-FfmpegPreparado -Preparado $ffmpegPreparado
 
 $config = [ordered]@{
     CarpetaMultimedia = $MediaFolder
@@ -367,7 +377,7 @@ Write-Host 'VLC video output:         Direct3D9'
 Write-Host 'Aceleración de video:     desactivada'
 Write-Host 'Normalización:            activa (resolución exacta del monitor)'
 Write-Host 'Siempre encima:           activado (--video-on-top)'
-Write-Host 'Lanzador v3.3:            diagnóstico de arranque activado'
+Write-Host 'Lanzador v3.4:            diagnóstico de arranque activado'
 Write-Host ''
 
 try {
@@ -377,4 +387,11 @@ try {
 }
 catch {
     Write-Host 'La tarea quedó instalada y se iniciará al próximo inicio de sesión.' -ForegroundColor Yellow
+}
+
+}
+finally {
+    if ($ffmpegPreparado) {
+        Remove-Item -LiteralPath $ffmpegPreparado.TempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }

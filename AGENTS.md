@@ -47,7 +47,9 @@ Run on Windows:
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Validate-PowerShell.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Test-Invariants.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Test-Control-Logic.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Build-Release.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Test-Release.ps1 -OutputDirectory .\release
 ```
 
 Do not claim a Windows runtime behavior is verified unless it has actually been tested on the cashier PC or CI.

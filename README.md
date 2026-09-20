@@ -4,9 +4,9 @@ Casa Elida digital signage for Windows 10 cashier PCs.
 
 The project turns `C:\Users\windows\Desktop\anuncios` into an automatically managed advertising source for the cashier PC's second monitor. Cashiers drop images/videos into the folder; the controller detects changes, validates and normalizes media with FFmpeg, rebuilds a randomized playlist, and runs VLC fullscreen on monitor 2.
 
-## v3.3
+## v3.4
 
-v3.3 adds VLC `--video-on-top`.
+v3.4 adds a compact Spanish control menu, safer process handling, and clearer status. v3.3 added VLC `--video-on-top`.
 
 That means the signage video window is configured to remain above ordinary windows on the second display. This reduces accidental coverage by other applications.
 
@@ -80,7 +80,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Build-Release.ps
 Output:
 
 ```text
-release\Casa Elida - Anuncios v3.3.0.zip
+release\Casa Elida - Anuncios v3.4.0.zip
 ```
 
 ## Install on the cashier PC
@@ -97,17 +97,16 @@ The installer preserves:
 C:\Users\windows\Desktop\anuncios
 ```
 
+## Cashier controls
+
+Copy `ANUNCIOS.cmd` from `package/CONTROLES PARA ESCRITORIO/` to the cashier desktop for one menu with Start, Stop, and Status. The three existing shortcuts remain available. The menu uses an ordinary resizable console window; VLC playback remains fullscreen on monitor 2.
+
+## Wiki
+
+[Spanish and English guides](https://github.com/j3w1/ce-signage/wiki) cover daily use, installation, and troubleshooting.
+
 ## GitHub
 
-This repository is intentionally Git-ready but does not contain a `.git` directory.
+This public repository is licensed under MIT. Changes are checked by the Windows PowerShell 5.1 GitHub Actions workflow on pull requests and pushes to `main`. The workflow validates syntax and behavior, builds a release ZIP, and uploads it as an artifact.
 
-Typical first setup:
-
-```powershell
-git init
-git add .
-git commit -m "Initial Casa Elida signage v3.3"
-git branch -M main
-```
-
-Then create the GitHub repository and add its remote when ready.
+The ZIP is intended for Windows 10 cashier PCs. The CI runner does not provide the dual-monitor cashier setup, so installation and display behavior still require the manual checks in `docs/DEVELOPMENT.md`.

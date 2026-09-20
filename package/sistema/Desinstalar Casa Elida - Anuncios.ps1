@@ -1,4 +1,5 @@
-﻿$ErrorActionPreference = 'SilentlyContinue'
+﻿$ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Identidad de Procesos.ps1')
 
 $TaskName = 'Casa Elida - Anuncios'
 $InstallDir = 'C:\ProgramData\Casa Elida\Anuncios'
@@ -23,12 +24,13 @@ foreach ($pidFile in @(
     (Join-Path $InstallDir 'vlc.pid'),
     (Join-Path $InstallDir 'controlador.pid')
 )) {
-    if (Test-Path -LiteralPath $pidFile) {
-        try {
-            $pidObjetivo = [int](Get-Content -LiteralPath $pidFile | Select-Object -First 1)
-            Stop-Process -Id $pidObjetivo -Force -ErrorAction SilentlyContinue
-        }
-        catch {}
+    $nombre = if ($pidFile -like '*vlc.pid') { 'vlc' } else { 'powershell' }
+    $proceso = Obtener-ProcesoControlado -ArchivoPid $pidFile -NombreEsperado $nombre
+    if ($proceso) {
+        Stop-Process -Id $proceso.Id -Force -ErrorAction Stop
+    }
+    elseif (Test-Path -LiteralPath $pidFile) {
+        Write-Host "Aviso: no se pudo verificar $pidFile; no se detendrá otro proceso." -ForegroundColor Yellow
     }
 }
 

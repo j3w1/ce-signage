@@ -2,7 +2,9 @@
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $files = @(
-    Get-ChildItem -LiteralPath (Join-Path $repoRoot 'package') -Filter '*.ps1' -File -Recurse
+    foreach ($carpeta in @('package', 'tests', 'tools')) {
+        Get-ChildItem -LiteralPath (Join-Path $repoRoot $carpeta) -Filter '*.ps1' -File -Recurse
+    }
 )
 
 if ($files.Count -eq 0) {

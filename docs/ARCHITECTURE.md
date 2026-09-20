@@ -34,7 +34,8 @@ Wraps controller startup and persists startup diagnostics.
 ### Control TUI
 `package/sistema/Control de Anuncios.ps1`
 
-Spanish cashier/admin interface used by:
+Spanish cashier/admin interface with a compact menu and shared status/process helpers, used by:
+- `ANUNCIOS.cmd` (combined menu)
 - `START ANUNCIOS.cmd`
 - `STOP ANUNCIOS.cmd`
 - `STATUS ANUNCIOS.cmd`
