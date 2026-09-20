@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.4.0
+
+- Added one compact Spanish menu with Start, Stop, and Status; preserved the three existing shortcuts.
+- Added clearer status and guidance for preparation, empty media, partial failures, missing monitor, and stale state.
+- Protected process stop operations against reused or unrelated PIDs.
+- Made state updates atomic and added a controller heartbeat.
+- Verified FFmpeg downloads before interrupting an existing installation.
+- Expanded Windows PowerShell 5.1 CI tests and release package checks.
+
 ## 3.3.0
 
 - Added VLC `--video-on-top`.

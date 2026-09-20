@@ -1,4 +1,4 @@
-﻿CASA ELIDA - ANUNCIOS v3.3
+﻿CASA ELIDA - ANUNCIOS v3.4
 ========================
 
 CAMBIO PRINCIPAL
@@ -139,6 +139,7 @@ CONTROLES DEL ESCRITORIO
 ------------------------
 Copie:
 
+    CONTROLES PARA ESCRITORIO\ANUNCIOS.cmd
     CONTROLES PARA ESCRITORIO\START ANUNCIOS.cmd
     CONTROLES PARA ESCRITORIO\STOP ANUNCIOS.cmd
     CONTROLES PARA ESCRITORIO\STATUS ANUNCIOS.cmd
@@ -146,6 +147,9 @@ Copie:
 a:
 
     C:\Users\windows\Desktop
+
+ANUNCIOS.cmd ofrece un menú para iniciar, detener y consultar el estado.
+Las tres opciones anteriores siguen disponibles.
 
 STATUS ahora muestra:
     - segunda pantalla;

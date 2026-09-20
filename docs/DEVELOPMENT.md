@@ -14,14 +14,16 @@ The production PC is Windows 10.
    ```powershell
    .\tests\Validate-PowerShell.ps1
    .\tests\Test-Invariants.ps1
+   .\tests\Test-Control-Logic.ps1
    .\tools\Build-Release.ps1
+   .\tests\Test-Release.ps1 -OutputDirectory .\release
    ```
 4. Install the generated package on a test/cashier Windows 10 machine.
 5. Test monitor 1 remains usable.
 6. Test monitor 2 playback.
 7. Test add/replace/delete media without restarting.
 8. Test invalid media is skipped.
-9. Test STOP/START/STATUS.
+9. Test ANUNCIOS menu (1/2/3/0), including canceling Stop, and the three existing shortcuts without elevation.
 10. Test reboot/login autostart.
 
 ## Codex
