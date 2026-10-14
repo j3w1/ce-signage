@@ -69,15 +69,15 @@ This repository joined the CE Meta portfolio on 2026-09-22. Nothing is installed
 nothing is imported: CE Meta is a service that reads this repository through one GitHub App
 installation, and this section is the cooperation contract an agent working in it needs.
 
-**Right now it writes nothing here.** Being in the portfolio means this repository is read and
-censused and its objects are visible. It does not mean any writer reaches them. Reviewed
-classification rules may decide labels only in the repositories named by
-`classification_authority.repositories` in [`policy/object-metadata.yaml`](https://github.com/j3w1/ce-meta/blob/main/policy/object-metadata.yaml),
-and the canonical label definitions are written only in the repositories named by
-`coverage_repositories` in [`policy/label-management.yaml`](https://github.com/j3w1/ce-meta/blob/main/policy/label-management.yaml).
-This repository is in neither yet. Each is its own reviewed change, made once this repository's
-corpus has been classified — so the first labels that appear here will have been reviewed before
-they were written, not after.
+**It writes labels here.** This repository is named by `classification_authority.repositories` in
+[`policy/object-metadata.yaml`](https://github.com/j3w1/ce-meta/blob/main/policy/object-metadata.yaml)
+and by `coverage_repositories` in
+[`policy/label-management.yaml`](https://github.com/j3w1/ce-meta/blob/main/policy/label-management.yaml),
+so the App's labels writer applies the exact managed label set that reviewed policy decides for each
+object here, and the label-definition writer keeps the canonical label definitions here. Whether any
+other writer reaches an object here — a rule in `policy/repository-metadata.yaml`, or a Project
+membership grant — is stated by that policy and its live grant, not by this file. An object whose
+reviewed evidence decides nothing sits at `NEEDS_REVIEW` or `HOLD` and writes nothing.
 
 **Protected CE label prefixes:** `ce-systems`, `cross-repo`, `historical-evidence`, `type:`,
 `area:`, `concern:`. Labels outside them are never touched — including the ones GitHub creates by
